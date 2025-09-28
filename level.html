@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>نظام مراقبة مستوى الماء — صفحة متكاملة</title>
+<link rel="icon" href="data:,">
+<style>
+  :root{--bg:#f4f7fb;--card:#fff;--accent:#0b76d1;--muted:#556;}
+  body{font-family:system-ui, "Segoe UI", Tahoma, Roboto, "Noto Sans Arabic", Arial; background:var(--bg); margin:0; padding:16px; direction:rtl;}
+  .container{max-width:1100px;margin:10px auto;}
+  header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;}
+  h1{margin:0;font-size:20px;}
+  .card{background:var(--card);padding:14px;border-radius:12px;box-shadow:0 6px 18px rgba(10,20,40,0.06);}
+  .top{display:grid;grid-template-columns:1fr 360px;gap:12px;}
+  .bigPercent{font-size:56px;font-weight:700;}
+  .meter{height:18px;background:#eef3fb;border-radius:12px;overflow:hidden;}
+  .meter > .fill{height:100%;width:0%;transition:width .5s ease;}
+  input, select{padding:8px;border-radius:8px;border:1px solid #d1d5db;width:100%}
+  button{background:var(--accent);color:white;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+  button.ghost{background:transparent;color:var(--muted);border:1px solid #e6eef9}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .small{font-size:13px;color:var(--muted)}
+  pre.log{max-height:180px;overflow:auto;background:#0f1724;color:#d1fae5;padding:8px;border-radius:8px;font-size:12px}
+  #chartWrap{height:260px}
+  footer{margin-top:12px;font-size:13px;color:var(--muted);text-align:center}
+  @media(max-width:900px){.top{grid-template-columns:1fr}.bigPercent{font-size:40px}}
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>نظام مراقبة مستوى الماء — صفحة متكاملة</h1>
+        <div class="small">رابط الـ API تم تعبئته مسبقًا. اضغط Start للبدء.</div>
+      </div>
+      <div class="small">الصفحة جاهزة للعمل مع الرابط الذي أعطيت.</div>
+    </header>
+
+    <div class="card top">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div class="bigPercent" id="percentText">-- %</div>
+            <div class="small">آخر تحديث: <span id="lastUpdate">-</span></div>
+          </div>
+          <div style="text-align:left;">
+            <div class="row">
+              <button id="startBtn">Start Monitoring</button>
+              <button id="stopBtn" class="ghost" disabled>Stop</button>
+              <button id="fetchNow" class="ghost">سحب الآن</button>
+            </div>
+            <div style="margin-top:8px;">
+              <div class="small">حالة الاتصال: <span id="connStatus">غير متصل</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:10px" class="meter"><div class="fill" id="meterFill"></div></div>
+
+        <div id="chartWrap" class="card" style="padding:8px;margin-top:10px;">
+          <canvas id="historyChart" style="width:100%;height:100%"></canvas>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+          <button id="exportCSV" class="ghost">تصدير CSV</button>
+          <button id="clearData" class="ghost">مسح السجل</button>
+          <div class="small">نقاط محفوظة محليًا: <span id="pointsCount">0</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <label>API URL (يمكن تغييره يدويًا إذا أردت)</label>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <input type="text" id="apiInput" />
+          <button id="saveApi">حفظ</button>
+        </div>
+
+        <div style="margin-top:10px">
+          <label>فاصل التحديث (ثواني)</label>
+          <input type="number" id="intervalInput" value="10" min="1" />
+        </div>
+
+        <div style="margin-top:10px">
+          <label>معايرة (أضف/اطرح)</label>
+          <input type="number" id="calibInput" value="0" />
+        </div>
+
+        <div style="margin-top:10px">
+          <label>سلاسة (EMA alpha — 0 = لا سلاسة)</label>
+          <input type="number" step="0.1" id="smoothInput" value="0" min="0" />
+        </div>
+
+        <div style="margin-top:10px">
+          <label>عتبات الإنذار (%)</label>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <input type="number" id="highThreshold" value="95" />
+            <input type="number" id="midThreshold" value="94" />
+            <input type="number" id="lowThreshold" value="40" />
+          </div>
+        </div>
+
+        <div style="margin-top:10px">
+          <label>أسماء ملفات أصوات الإنذار</label>
+          <input type="text" id="soundHigh" value="9.mp3" />
+          <input type="text" id="soundMid" value="93.mp3" style="margin-top:6px" />
+          <input type="text" id="soundLow" value="88.mp3" style="margin-top:6px" />
+        </div>
+
+        <div style="margin-top:10px" class="row">
+          <button id="silenceBtn" class="ghost">كتم/إلغاء الكتم</button>
+          <button id="stopAlarms" class="ghost">إيقاف الأصوات</button>
+          <button id="testConn" class="ghost">اختبار الاتصال</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;gap:12px;margin-top:12px">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><strong>سجل القياسات (أحدث 500)</strong></div>
+          <div class="small">وقت الخادم: <span id="serverTime">-</span></div>
+        </div>
+        <pre id="logBox" class="log">لا توجد بيانات بعد.</pre>
+      </div>
+
+      <div class="card small">
+        <strong>ملاحظات:</strong>
+        <ul>
+          <li>اضغط Start Monitoring مرة للسماح بتشغيل الصوت.</li>
+          <li>إن ظهر خطأ CORS ففعّل Access-Control-Allow-Origin على الـ API.</li>
+        </ul>
+      </div>
+    </div>
+
+    <footer class="card small">الصفحة جاهزة — اضغط Start للمراقبة.</footer>
+  </div>
+
+  <audio id="audioHigh" preload="auto"></audio>
+  <audio id="audioMid" preload="auto"></audio>
+  <audio id="audioLow" preload="auto"></audio>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+  // تم تعبئة رابط الـ API الذي أعطيته:
+  const DEFAULT_API = 'https://script.google.com/macros/s/AKfycbzVB7uPTsNbotACV0aWTb7Y37wsI47BwCVbz_l4kitBgOBv9r_wTQJQGGWfjyGMU4ky/exec';
+
+  const apiInput = document.getElementById('apiInput');
+  const saveApi = document.getElementById('saveApi');
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const fetchNow = document.getElementById('fetchNow');
+  const connStatus = document.getElementById('connStatus');
+  const percentText = document.getElementById('percentText');
+  const meterFill = document.getElementById('meterFill');
+  const lastUpdate = document.getElementById('lastUpdate');
+  const logBox = document.getElementById('logBox');
+  const pointsCount = document.getElementById('pointsCount');
+  const storedPoints = document.getElementById('storedPoints');
+  const intervalInput = document.getElementById('intervalInput');
+  const calibInput = document.getElementById('calibInput');
+  const smoothInput = document.getElementById('smoothInput');
+  const highThreshold = document.getElementById('highThreshold');
+  const midThreshold = document.getElementById('midThreshold');
+  const lowThreshold = document.getElementById('lowThreshold');
+  const soundHigh = document.getElementById('soundHigh');
+  const soundMid = document.getElementById('soundMid');
+  const soundLow = document.getElementById('soundLow');
+  const silenceBtn = document.getElementById('silenceBtn');
+  const stopAlarms = document.getElementById('stopAlarms');
+  const exportCSV = document.getElementById('exportCSV');
+  const clearData = document.getElementById('clearData');
+  const testConn = document.getElementById('testConn');
+  const serverTime = document.getElementById('serverTime');
+
+  const audioHigh = document.getElementById('audioHigh');
+  const audioMid = document.getElementById('audioMid');
+  const audioLow = document.getElementById('audioLow');
+
+  const KEY_SETTINGS = 'wm_full_settings_v1';
+  const KEY_POINTS = 'wm_full_points_v1';
+
+  let settings = {
+    api: DEFAULT_API,
+    interval: 10, calib: 0, smooth: 0,
+    high: 97, mid: 95, low: 94,
+    soundHigh: 'alarm_high.mp3', soundMid: 'alarm_mid.mp3', soundLow: 'alarm_low.mp3'
+  };
+  let points = [];
+  let monitoring = false;
+  let pollingTimer = null;
+  let ema = null;
+  let silenced = false;
+
+  const ctx = document.getElementById('historyChart').getContext('2d');
+  const chartData = { labels: [], datasets: [{ label:'% مستوى الماء', data: [], tension:0.2, fill:true, pointRadius:0 }] };
+  const chart = new Chart(ctx, {
+    type:'line',
+    data: chartData,
+    options:{ responsive:true, interaction:{intersect:false,mode:'index'}, scales:{ x:{ display:true }, y:{ suggestedMin:0, suggestedMax:100 } } }
+  });
+
+  function log(msg){
+    const time = new Date().toLocaleString();
+    const line = `[${time}] ${msg}`;
+    logBox.textContent = line + '\n' + logBox.textContent;
+  }
+
+  function saveSettings(){
+    settings.api = apiInput.value.trim();
+    settings.interval = Number(intervalInput.value) || 10;
+    settings.calib = Number(calibInput.value) || 0;
+    settings.smooth = Number(smoothInput.value) || 0;
+    settings.high = Number(highThreshold.value) || 97;
+    settings.mid = Number(midThreshold.value) || 94;
+    settings.low = Number(lowThreshold.value) || 95;
+    settings.soundHigh = soundHigh.value || 'alarm_high.mp3';
+    settings.soundMid = soundMid.value || 'alarm_mid.mp3';
+    settings.soundLow = soundLow.value || 'alarm_low.mp3';
+    localStorage.setItem(KEY_SETTINGS, JSON.stringify(settings));
+    loadAudioSources();
+    log('تم حفظ الإعدادات');
+  }
+
+  function loadSettings(){
+    const s = localStorage.getItem(KEY_SETTINGS);
+    if(s) { try{ settings = JSON.parse(s); }catch(e){} }
+    apiInput.value = settings.api || '';
+    intervalInput.value = settings.interval;
+    calibInput.value = settings.calib;
+    smoothInput.value = settings.smooth;
+    highThreshold.value = settings.high;
+    midThreshold.value = settings.mid;
+    lowThreshold.value = settings.low;
+    soundHigh.value = settings.soundHigh;
+    soundMid.value = settings.soundMid;
+    soundLow.value = settings.soundLow;
+    loadAudioSources();
+  }
+
+  function loadPoints(){
+    const s = localStorage.getItem(KEY_POINTS);
+    if(s) { try{ points = JSON.parse(s); }catch(e){ points = []; } }
+    pointsCount.textContent = points.length;
+    refreshChart();
+  }
+
+  function savePoints(){
+    localStorage.setItem(KEY_POINTS, JSON.stringify(points.slice(-500)));
+  }
+
+  function pushPoint(value, raw){
+    const t = Date.now();
+    points.push({t,value,raw});
+    if(points.length > 500) points = points.slice(-500);
+    savePoints();
+    updateUIWithPoint(value);
+    chart.data.labels.push(new Date(t).toLocaleTimeString());
+    chart.data.datasets[0].data.push(value);
+    if(chart.data.labels.length > 500){ chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+    chart.update();
+  }
+
+  function updateUIWithPoint(value){
+    percentText.textContent = Math.round(value) + ' %';
+    meterFill.style.width = Math.max(0,Math.min(100,value)) + '%';
+    lastUpdate.textContent = new Date().toLocaleString();
+    pointsCount.textContent = points.length;
+  }
+
+  function refreshChart(){
+    chart.data.labels = points.map(p => new Date(p.t).toLocaleTimeString());
+    chart.data.datasets[0].data = points.map(p => p.value);
+    chart.update();
+  }
+
+  function exportToCSV(){
+    if(points.length === 0){ alert('لا توجد بيانات للتصدير'); return; }
+    let csv = 'timestamp,value,raw\n';
+    points.forEach(p => {
+      csv += `${new Date(p.t).toISOString()},${p.value},"${JSON.stringify(p.raw).replace(/"/g,'""')}"\n`;
+    });
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'water_levels.csv'; document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    log('تصدير CSV تم');
+  }
+
+  function clearAllData(){
+    if(!confirm('هل تريد مسح السجل المحلي (سيُفقد كل البيانات)؟')) return;
+    points = []; savePoints(); refreshChart(); logBox.textContent = 'تم مسح السجل.';
+    log('مسح السجل محليًا');
+  }
+
+  async function fetchAPIonce(){
+    if(!settings.api) throw new Error('API غير محدد');
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(), 8000);
+    const res = await fetch(settings.api, { cache:'no-cache', signal: controller.signal });
+    clearTimeout(timer);
+    serverTime.textContent = res.headers.get('date') || '-';
+    const text = await res.text();
+    let parsed;
+    try{ parsed = JSON.parse(text); }catch(e){ parsed = text.trim(); }
+    let number = null;
+    if(typeof parsed === 'number') number = parsed;
+    else if(typeof parsed === 'string'){
+      const n = parseFloat(parsed);
+      if(!isNaN(n)) number = n;
+    } else if(typeof parsed === 'object'){
+      if(parsed.percentage !== undefined) number = Number(parsed.percentage);
+      else if(parsed.level !== undefined) number = Number(parsed.level);
+      else if(parsed.percent !== undefined) number = Number(parsed.percent);
+      else {
+        for(const k of Object.keys(parsed)){
+          const v = parsed[k];
+          if(typeof v === 'number'){ number = v; break; }
+          if(typeof v === 'string' && !isNaN(parseFloat(v))){ number = parseFloat(v); break; }
+        }
+      }
+    }
+    if(number === null || isNaN(number)){
+      const m = text.match(/-?\d+(\.\d+)?/);
+      if(m) number = parseFloat(m[0]);
+    }
+    if(number === null || isNaN(number)) throw new Error('تعذّر استخراج قيمة مئوية من رد الخادم: ' + text.slice(0,180));
+    return { raw: parsed, value: number };
+  }
+
+  async function pollOnce(){
+    try{
+      connStatus.textContent = 'جاري الاتصال...';
+      const result = await fetchAPIonce();
+      connStatus.textContent = 'متصل';
+      log('قراءة: ' + JSON.stringify(result.raw).slice(0,150));
+      let val = Number(result.value) + Number(settings.calib || 0);
+      const alpha = Number(settings.smooth) || 0;
+      if(alpha > 0){
+        if(ema === null) ema = val;
+        else ema = ema * (1 - alpha) + val * alpha;
+        val = ema;
+      }
+      if(val < 0) val = 0;
+      if(val > 100) val = 100;
+      pushPoint(Number(val.toFixed(2)), result.raw);
+      evaluateAlerts(val);
+    }catch(err){
+      connStatus.textContent = 'خطأ';
+      log('خطأ في سحب البيانات: ' + (err.message || err));
+    }
+  }
+
+  function loadAudioSources(){
+    audioHigh.src = settings.soundHigh;
+    audioMid.src = settings.soundMid;
+    audioLow.src = settings.soundLow;
+    audioHigh.loop = true; audioMid.loop = true; audioLow.loop = true;
+  }
+
+  function stopAllSounds(){
+    [audioHigh,audioMid,audioLow].forEach(a=>{ try{ a.pause(); a.currentTime = 0; a.loop = false; }catch(e){} });
+  }
+
+  function evaluateAlerts(val){
+    if(silenced) return;
+    stopAllSounds();
+    if(val >= settings.high){
+      try{ audioHigh.loop = true; audioHigh.play().catch(()=>{}); log('إنذار: عالٍ'); }catch(e){}
+    } else if(val >= settings.mid){
+      try{ audioMid.loop = true; audioMid.play().catch(()=>{}); log('إنذار: متوسط'); }catch(e){}
+    } else if(val <= settings.low){
+      try{ audioLow.loop = true; audioLow.play().catch(()=>{}); log('إنذار: منخفض'); }catch(e){}
+    }
+  }
+
+  function startMonitoring(){
+    if(!settings.api){ alert('أدخل عنوان الـ API ثم اضغط حفظ.'); return; }
+    if(monitoring) return;
+    monitoring = true;
+    startBtn.disabled = true; stopBtn.disabled = false;
+    audioMid.play().then(()=>{ audioMid.pause(); audioMid.currentTime = 0; }).catch(()=>{});
+    pollOnce();
+    pollingTimer = setInterval(pollOnce, Math.max(1, settings.interval) * 1000);
+    log('بدأت المراقبة كل ' + settings.interval + ' ثانية');
+  }
+
+  function stopMonitoringFunc(){
+    monitoring = false;
+    startBtn.disabled = false; stopBtn.disabled = true;
+    if(pollingTimer) clearInterval(pollingTimer);
+    pollingTimer = null;
+    stopAllSounds();
+    log('توقفت المراقبة');
+  }
+
+  saveApi.addEventListener('click', ()=>{ saveSettings(); alert('تم حفظ الإعدادات'); });
+  startBtn.addEventListener('click', ()=>{ saveSettings(); startMonitoring(); });
+  stopBtn.addEventListener('click', ()=>{ stopMonitoringFunc(); });
+  fetchNow.addEventListener('click', ()=>{ saveSettings(); pollOnce(); });
+  testConn.addEventListener('click', async ()=>{ saveSettings(); connStatus.textContent = 'جارٍ اختبار...'; try{ const r = await fetch(settings.api); connStatus.textContent = 'حسناً (HTTP ' + r.status + ')'; alert('اختبار ناجح — رمز الحالة: ' + r.status + '.'); }catch(e){ connStatus.textContent = 'فشل'; alert('فشل الاتصال: ' + (e.message||e)); }});
+  silenceBtn.addEventListener('click', ()=>{ silenced = !silenced; silenceBtn.textContent = silenced ? 'إلغاء الكتم' : 'كتم/إلغاء الكتم'; if(silenced) stopAllSounds(); });
+  stopAlarms.addEventListener('click', ()=>{ silenced = true; stopAllSounds(); setTimeout(()=> silenced = false, 1000); });
+  document.getElementById('exportCSV')?.addEventListener('click', exportToCSV);
+  document.getElementById('clearData')?.addEventListener('click', clearAllData);
+
+  window.addEventListener('beforeunload', ()=>{ saveSettings(); savePoints(); });
+
+  loadSettings();
+  loadPoints();
+  log('الصفحة جاهزة — اضغط Start للمراقبة.');
+  </script>
+</body>
+</html>
